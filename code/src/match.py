@@ -3,10 +3,12 @@ import requests
 import pandas as pd
 import argparse
 import shutil
+import sys
 from io import StringIO
 
-INT_DIR = '/Volumes/vosslabhpc/Projects/BOOST/InterventionStudy/3-experiment/data/bids/sourcedata'
-OBS_DIR = '/Volumes/vosslabhpc/Projects/BOOST/ObservationalStudy/3-experiment/data/sourcedata'
+INT_DIR = '/Volumes/vosslabhpc/Projects/BOOST/InterventionStudy/3-experiment/data/bids'
+OBS_DIR = '/Volumes/vosslabhpc/Projects/BOOST/ObservationalStudy/3-experiment/data/'
+    
 
 def parse_args():
     argparser = argparse.ArgumentParser(description='Match files to REDCap')
@@ -64,6 +66,9 @@ def get_list(token):
         'format': 'csv'
     }
     r = requests.post(url, data=data)
+    if r.status_code != 200:
+        print(f"Error! Status code is {r.status_code}")
+        sys.exit(1)
     df = pd.read_csv(StringIO(r.text))
     return df
 
@@ -89,6 +94,21 @@ def compare_ids(files, list):
     print('Matched lab_ids:', matched['lab_id'].unique())
     
     return matched
+
+
+def add_sub_to_sublist(matched):
+    with open('./code/resources/sublist.txt', 'r') as f:
+        data = f.read().splitlines()
+
+        for index, row in matched.iterrows():
+            if row['subject_id'] not in data:
+                with open('./code/resources/sublist.txt', 'a') as f:
+                    f.write(row['subject_id'] + '\n')
+
+        f.close()
+
+    return None
+
 
 def evaluate_run(matched):
     for index, row in matched.iterrows():
@@ -120,7 +140,7 @@ import shutil
 import re
 
 def save_n_rename_files(matched, dir):
-    
+    outputs = []    
     for index, row in matched.iterrows():
         # Use regex to extract the year from the file name
         match = re.search(r'\((\d{4})-\d{2}-\d{2}\)', row['raw_file'])
@@ -153,10 +173,26 @@ def save_n_rename_files(matched, dir):
         
         # Copy the file to the destination
         #shutil.copy(src, dest)
+        outputs.append(dest)
 
-    return None
+    return outputs
     
+def GGIR(matched):
 
+    os.system('R') #start R term
+
+    for index, row in matched.iterrows():
+        # Use regex to extract the year from the file name
+        match = re.search(r'\((\d{4})-\d{2}-\d{2}\)', row['raw_file'])
+
+        if row['subject_id']<7000:
+            outdir = os.path.join(OBS_DIR, 'derivatives', 'GGIR-3.1.4', f"sub-{row['subject_id']")
+        else:
+            outdir = os.path.join(INT_DIR, 'derivatives', 'GGIR-3.1.4', f"sub-{row['subject_id']")
+        #run the GGIR script
+        os.system(f"Rscript code/src/accel.R --project_dir {outdir} --project_deriv_dir {outdir}/derivatives --files {row['raw_file']} --verbose TRUE")
+    os.system('q()')
+    return None
 
 
 def main():
@@ -166,6 +202,7 @@ def main():
     df = parse_files(need)
     run_list = get_list(args.token)
     matched = compare_ids(df, run_list)
+    add_sub_to_sublist(matched)
     matched = evaluate_run(matched)
     save_n_rename_files(matched, args.indir)
 
